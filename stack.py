@@ -51,9 +51,12 @@ def read_graph():
 
 
 def update_branch(graph: networkx.DiGraph, curr_branch: str, curr_sha: str):
+    print("*" * 80)
     graph.nodes[curr_branch]["sha"] = curr_sha
     for parent_branch in graph.predecessors(curr_branch):
+        print("RUN", f"{parent_branch}..{curr_branch}")
         subprocess.run(("git", "rev-list", f"{parent_branch}..{curr_branch}"))
+    print("*" * 80)
 
 
 def add_branch(
