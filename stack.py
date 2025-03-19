@@ -50,6 +50,24 @@ def read_graph():
         json.dump(networkx.node_link_data(graph, edges="edges"), file, indent=2)
 
 
+def update_branch(graph: networkx.DiGraph, curr_branch: str, curr_sha: str):
+    graph.nodes[curr_branch]["sha"] = curr_sha
+    for parent_branch in graph.predecessors(curr_branch):
+        subprocess.run(("git", "rev-list", f"{parent_branch}..{curr_branch}"))
+
+
+def add_branch(
+    graph: networkx.DiGraph, main_branch: str, curr_branch: str, curr_sha: str
+):
+    graph_shas = {graph.nodes[node_id]["sha"]: node_id for node_id in graph.nodes}
+    print("Add", curr_branch, curr_sha, graph_shas)
+    for other_sha in get_sha_list():
+        if other_sha == curr_sha:
+            graph.add_node(curr_branch, sha=curr_sha, base=other_sha)
+            graph.add_edge(main_branch, curr_branch)
+            break
+
+
 def main(action, args):
     with read_graph() as graph:
         main_branch, main_sha = get_main_branch()
@@ -68,17 +86,9 @@ def main(action, args):
         if curr_branch == "HEAD":
             pass
         elif curr_branch in graph.nodes:
-            graph.nodes[curr_branch]["sha"] = curr_sha
+            update_branch(graph, curr_branch, curr_sha)
         elif action == "post-checkout" and curr_branch not in graph.nodes:
-            graph_shas = {
-                graph.nodes[node_id]["sha"]: node_id for node_id in graph.nodes
-            }
-            print("Add", curr_branch, curr_sha, graph_shas)
-            for other_sha in get_sha_list():
-                if other_sha == curr_sha:
-                    graph.add_node(curr_branch, sha=curr_sha, base=other_sha)
-                    graph.add_edge(main_branch, curr_branch)
-                    break
+            add_branch(graph, main_branch, curr_branch, curr_sha)
 
 
 if __name__ == "__main__":
