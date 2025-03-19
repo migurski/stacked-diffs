@@ -47,7 +47,7 @@ def read_graph():
         node_id = line.split(" ")[-1].strip()
         print(line, graph.nodes[node_id]["sha"][:9])
     with open(".stack.json", "w") as file:
-        json.dump(networkx.node_link_data(graph, edges="edges"), file)
+        json.dump(networkx.node_link_data(graph, edges="edges"), file, indent=2)
 
 
 def main(action, args):
@@ -65,7 +65,9 @@ def main(action, args):
             "args:",
             args,
         )
-        if action == "post-commit" and curr_branch in graph.nodes:
+        if curr_branch == "HEAD":
+            pass
+        elif curr_branch in graph.nodes:
             graph.nodes[curr_branch]["sha"] = curr_sha
         elif action == "post-checkout" and curr_branch not in graph.nodes:
             graph_shas = {
