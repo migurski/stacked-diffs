@@ -6,7 +6,10 @@ import networkx
 
 
 def get_main_sha() -> str:
-    output = subprocess.check_output(("git", "rev-parse", "main"))
+    try:
+        output = subprocess.check_output(("git", "rev-parse", "main"))
+    except subprocess.CalledProcessError:
+        output = subprocess.check_output(("git", "rev-parse", "master"))
     return output.decode("utf8").strip()
 
 
