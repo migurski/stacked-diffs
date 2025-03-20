@@ -8,28 +8,29 @@ import sys
 import networkx
 
 
+def get_output(cmd: tuple[str]) -> str:
+    return subprocess.check_output(cmd).decode("utf8")
+
+
 def get_main_branch() -> tuple[str, str]:
     try:
-        output = subprocess.check_output(("git", "rev-parse", "main"))
+        sha = get_output(("git", "rev-parse", "main")).strip()
     except subprocess.CalledProcessError:
-        output = subprocess.check_output(("git", "rev-parse", "master"))
+        sha = get_output(("git", "rev-parse", "master")).strip()
         branchname = "master"
     else:
         branchname = "main"
-    return branchname, output.decode("utf8").strip()
+    return branchname, sha
 
 
 def get_curr_branch() -> tuple[str, str]:
-    output1 = subprocess.check_output(("git", "rev-parse", "--abbrev-ref", "HEAD"))
-    branchname = output1.decode("utf8").strip()
-    output2 = subprocess.check_output(("git", "rev-parse", "HEAD"))
-    sha = output2.decode("utf8").strip()
+    branchname = get_output(("git", "rev-parse", "--abbrev-ref", "HEAD")).strip()
+    sha = get_output(("git", "rev-parse", "HEAD")).strip()
     return branchname, sha
 
 
 def get_sha_list() -> list[str]:
-    output = subprocess.check_output(("git", "rev-list", "HEAD"))
-    lines = output.decode("utf8").split()
+    lines = get_output(("git", "rev-list", "HEAD")).split()
     return lines
 
 
@@ -51,12 +52,10 @@ def read_graph():
 
 
 def update_branch(graph: networkx.DiGraph, curr_branch: str, curr_sha: str):
-    print("*" * 80)
     graph.nodes[curr_branch]["sha"] = curr_sha
     for parent_branch in graph.predecessors(curr_branch):
-        print("RUN", f"{parent_branch}..{curr_branch}")
-        subprocess.run(("git", "rev-list", f"{parent_branch}..{curr_branch}"))
-    print("*" * 80)
+        base_sha = get_output(("git", "merge-base", parent_branch, curr_branch)).strip()
+        graph.nodes[curr_branch]["base"] = base_sha
 
 
 def add_branch(
@@ -91,7 +90,9 @@ def main(action, args):
         elif curr_branch in graph.nodes:
             update_branch(graph, curr_branch, curr_sha)
         elif action == "post-checkout" and curr_branch not in graph.nodes:
-            add_branch(graph, main_branch, curr_branch, curr_sha)
+            _, is_branch = args
+            if is_branch == "1":
+                add_branch(graph, main_branch, curr_branch, curr_sha)
 
 
 if __name__ == "__main__":

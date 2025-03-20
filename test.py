@@ -43,6 +43,7 @@ class TestRepo(unittest.TestCase):
         self.assertEqual(len(graph.nodes), 1)
 
     def test_two_branches(self):
+        """One branch simply extends main"""
         with fresh_repo() as repodir:
             run_cmd("git commit -m one --allow-empty")
             run_cmd("git checkout -b branch/1")
@@ -55,6 +56,7 @@ class TestRepo(unittest.TestCase):
         self.assertEqual(graph.nodes["branch/1"]["base"], graph.nodes["main"]["sha"])
 
     def test_two_branches_no_ff(self):
+        """One branch diverges slightly from main"""
         with fresh_repo() as repodir:
             run_cmd("git commit -m one --allow-empty")
             run_cmd("git checkout -b branch/1")
@@ -68,3 +70,19 @@ class TestRepo(unittest.TestCase):
         self.assertEqual(len(graph.nodes), 2)
         self.assertEqual(list(graph.successors("main")), ["branch/1"])
         self.assertNotEqual(graph.nodes["branch/1"]["base"], graph.nodes["main"]["sha"])
+
+    def test_two_branches_ff_ok(self):
+        """One branch simply extends main after a merge"""
+        with fresh_repo() as repodir:
+            run_cmd("git commit -m one --allow-empty")
+            run_cmd("git checkout -b branch/1")
+            run_cmd("git checkout main")
+            run_cmd("git commit -m two --allow-empty")
+            run_cmd("git checkout branch/1")
+            run_cmd("git merge main")
+            run_cmd("git commit -m three --allow-empty")
+            with open(os.path.join(repodir, ".stack.json")) as file:
+                graph = networkx.node_link_graph(json.load(file), edges="edges")
+        self.assertEqual(len(graph.nodes), 2)
+        self.assertEqual(list(graph.successors("main")), ["branch/1"])
+        self.assertEqual(graph.nodes["branch/1"]["base"], graph.nodes["main"]["sha"])
