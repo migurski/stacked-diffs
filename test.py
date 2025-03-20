@@ -102,8 +102,7 @@ class TestRepo(unittest.TestCase):
     def test_two_branches_restack(self):
         """One branch diverges slightly from main"""
         with fresh_repo() as repodir:
-            run_cmd(
-                f"""
+            run_cmd(f"""
                 git commit -m one --allow-empty
                 git checkout -b branch/1
                 git commit -m two --allow-empty
@@ -112,9 +111,7 @@ class TestRepo(unittest.TestCase):
                 git checkout branch/1
                 git commit -m four --allow-empty
                 {PYTHON_STACK_PY} restack
-                """,
-                quiet=False,
-            )
+                """)
 
             with open(os.path.join(repodir, ".stack.json")) as file:
                 graph = networkx.node_link_graph(json.load(file), edges="edges")

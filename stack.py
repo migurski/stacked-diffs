@@ -9,7 +9,7 @@ import networkx
 
 
 def get_output(cmd: tuple[str]) -> str:
-    return subprocess.check_output(cmd).decode("utf8")
+    return subprocess.check_output(cmd, stderr=subprocess.PIPE).decode("utf8")
 
 
 def get_main_branch() -> tuple[str, str]:
@@ -58,6 +58,15 @@ def update_branch(graph: networkx.DiGraph, curr_branch: str, curr_sha: str):
         graph.nodes[curr_branch]["base"] = base_sha
 
 
+def restack_branch(graph: networkx.DiGraph, curr_branch: str, curr_sha: str):
+    if graph.nodes[curr_branch]["sha"] != curr_sha:
+        raise ValueError("Current branch SHA incorrect")
+    for parent_branch in graph.predecessors(curr_branch):
+        new_base_sha = graph.nodes[parent_branch]["sha"]
+        subprocess.check_call(("git", "rebase", new_base_sha))
+        graph.nodes[curr_branch]["base"] = new_base_sha
+
+
 def add_branch(
     graph: networkx.DiGraph, main_branch: str, curr_branch: str, curr_sha: str
 ):
@@ -90,7 +99,10 @@ def main(action, args):
         if curr_branch in graph.nodes:
             update_branch(graph, curr_branch, curr_sha)
         if action == "restack":
-            raise NotImplementedError()
+            if curr_branch in graph.nodes:
+                restack_branch(graph, curr_branch, curr_sha)
+            else:
+                raise NotImplementedError()
         elif action == "post-checkout" and curr_branch not in graph.nodes:
             _, is_branch = args
             if is_branch == "1":
