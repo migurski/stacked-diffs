@@ -86,9 +86,11 @@ def main(action, args):
             args,
         )
         if curr_branch == "HEAD":
-            pass
-        elif curr_branch in graph.nodes:
+            return
+        if curr_branch in graph.nodes:
             update_branch(graph, curr_branch, curr_sha)
+        if action == "restack":
+            raise NotImplementedError()
         elif action == "post-checkout" and curr_branch not in graph.nodes:
             _, is_branch = args
             if is_branch == "1":
