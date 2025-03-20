@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import contextlib
+import functools
 import json
 import os
 import subprocess
@@ -8,10 +9,16 @@ import sys
 import networkx
 
 
+def run_command(cmd: tuple[str]):
+    print("-->", " ".join(cmd))
+    subprocess.check_call(cmd)
+
+
 def get_output(cmd: tuple[str]) -> str:
     return subprocess.check_output(cmd, stderr=subprocess.PIPE).decode("utf8")
 
 
+@functools.cache
 def get_main_branch() -> tuple[str, str]:
     try:
         sha = get_output(("git", "rev-parse", "main")).strip()
@@ -23,12 +30,14 @@ def get_main_branch() -> tuple[str, str]:
     return branchname, sha
 
 
+@functools.cache
 def get_curr_branch() -> tuple[str, str]:
     branchname = get_output(("git", "rev-parse", "--abbrev-ref", "HEAD")).strip()
     sha = get_output(("git", "rev-parse", "HEAD")).strip()
     return branchname, sha
 
 
+@functools.cache
 def get_sha_list() -> list[str]:
     lines = get_output(("git", "rev-list", "HEAD")).split()
     return lines
@@ -42,11 +51,15 @@ def read_graph():
     else:
         graph = networkx.DiGraph()
     main_branch, main_sha = get_main_branch()
+    curr_branch, curr_sha = get_curr_branch()
     graph.add_node(main_branch, sha=main_sha)
+
     yield graph
+
     for line in networkx.generate_network_text(graph):
         node_id = line.split(" ")[-1].strip()
-        print(line, graph.nodes[node_id]["sha"][:9])
+        node_sha = graph.nodes[node_id]["sha"]
+        print("==>" if node_sha == curr_sha else "   ", line, node_sha[:7])
     with open(".stack.json", "w") as file:
         json.dump(networkx.node_link_data(graph, edges="edges"), file, indent=2)
 
@@ -63,7 +76,7 @@ def restack_branch(graph: networkx.DiGraph, curr_branch: str, curr_sha: str):
         raise ValueError("Current branch SHA incorrect")
     for parent_branch in graph.predecessors(curr_branch):
         new_base_sha = graph.nodes[parent_branch]["sha"]
-        subprocess.check_call(("git", "rebase", new_base_sha))
+        run_command(("git", "rebase", new_base_sha))
         graph.nodes[curr_branch]["base"] = new_base_sha
 
 
@@ -81,19 +94,7 @@ def add_branch(
 
 def main(action, args):
     with read_graph() as graph:
-        main_branch, main_sha = get_main_branch()
         curr_branch, curr_sha = get_curr_branch()
-        print(
-            action,
-            "branch:",
-            (curr_branch, curr_sha[:9]),
-            "main:",
-            (main_branch, main_sha[:9]),
-            "list:",
-            [s[:9] for s in get_sha_list()],
-            "args:",
-            args,
-        )
         if curr_branch == "HEAD":
             return
         if curr_branch in graph.nodes:
@@ -106,6 +107,7 @@ def main(action, args):
         elif action == "post-checkout" and curr_branch not in graph.nodes:
             _, is_branch = args
             if is_branch == "1":
+                main_branch, main_sha = get_main_branch()
                 add_branch(graph, main_branch, curr_branch, curr_sha)
 
 
