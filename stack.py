@@ -81,14 +81,14 @@ def restack_branch(graph: networkx.DiGraph, curr_branch: str, curr_sha: str):
 
 
 def add_branch(
-    graph: networkx.DiGraph, main_branch: str, curr_branch: str, curr_sha: str
+    graph: networkx.DiGraph, parent_sha: str, curr_branch: str, curr_sha: str
 ):
     graph_shas = {graph.nodes[node_id]["sha"]: node_id for node_id in graph.nodes}
     print("Add", curr_branch, curr_sha, graph_shas)
     for other_sha in get_sha_list():
         if other_sha == curr_sha:
             graph.add_node(curr_branch, sha=curr_sha, base=other_sha)
-            graph.add_edge(main_branch, curr_branch)
+            graph.add_edge(graph_shas[parent_sha], curr_branch)
             break
 
 
@@ -105,10 +105,9 @@ def main(action, args):
             else:
                 raise NotImplementedError()
         elif action == "post-checkout" and curr_branch not in graph.nodes:
-            _, is_branch = args
+            parent_sha, is_branch = args
             if is_branch == "1":
-                main_branch, main_sha = get_main_branch()
-                add_branch(graph, main_branch, curr_branch, curr_sha)
+                add_branch(graph, parent_sha, curr_branch, curr_sha)
 
 
 if __name__ == "__main__":
