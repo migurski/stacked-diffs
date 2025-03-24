@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
+import argparse
 import contextlib
+import enum
 import functools
 import json
 import logging
 import os
 import subprocess
-import sys
 
 import networkx
+
+
+class Actions(enum.StrEnum):
+    post_commit = "post-commit"
+    post_checkout = "post-checkout"
+    restack = "restack"
+    move_onto = "move-onto"
 
 
 def run_command(cmd: tuple[str]):
@@ -122,24 +130,28 @@ def main(action, args):
             return
         if curr_branch in graph.nodes:
             update_branch(graph, curr_branch, curr_sha)
-        if action == "restack":
+        if action == Actions.restack:
             if curr_branch in graph.nodes:
                 restack_branch(graph, curr_branch, curr_sha)
             else:
                 raise NotImplementedError()
-        elif action == "move-onto":
+        elif action == Actions.move_onto:
             (new_parent,) = args
             if new_parent in graph.nodes:
                 move_branch(graph, curr_branch, curr_sha, new_parent)
             else:
                 raise NotImplementedError()
-        elif action == "post-checkout" and curr_branch not in graph.nodes:
+        elif action == Actions.post_checkout and curr_branch not in graph.nodes:
             parent_sha, is_branch = args
             if is_branch == "1":
                 add_branch(graph, parent_sha, curr_branch, curr_sha)
 
 
+parser = argparse.ArgumentParser()
+parser.add_argument("action", choices=list(Actions))
+
+
 if __name__ == "__main__":
-    action, *args = sys.argv[1:]
+    args1, args2 = parser.parse_known_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    exit(main(action, args))
+    exit(main(args1.action, args2))
