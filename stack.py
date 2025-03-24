@@ -19,7 +19,7 @@ class Actions(enum.StrEnum):
 
 
 def run_command(cmd: tuple[str]):
-    print("-->", " ".join(cmd))
+    logging.info("--> %s", " ".join(cmd))
     subprocess.check_call(cmd)
 
 
@@ -68,7 +68,9 @@ def read_graph():
     for line in networkx.generate_network_text(graph):
         node_id = line.split(" ")[-1].strip()
         node_sha = graph.nodes[node_id]["sha"]
-        print("==>" if node_sha == head_sha else "   ", line, node_sha[:7])
+        logging.info(
+            "%s %s %s", "==>" if node_sha == head_sha else "   ", line, node_sha[:7]
+        )
     with open(".stack.json", "w") as file:
         json.dump(networkx.node_link_data(graph, edges="edges"), file, indent=2)
 
@@ -98,7 +100,7 @@ def move_branch(
     if new_parent == parent_branch:
         # No-op
         return
-    logging.info("Move %s %s onto %s", head_branch, head_sha[:9], new_parent)
+    logging.info("Move %s %s onto %s", head_branch, head_sha[:7], new_parent)
     new_base_sha = graph.nodes[new_parent]["sha"]
     run_command(("git", "rebase", new_base_sha))
     graph.nodes[head_branch]["base"] = new_base_sha
@@ -113,8 +115,8 @@ def add_branch(
     logging.info(
         "Add %s %s %s",
         head_branch,
-        head_sha[:9],
-        {s[:9]: b for s, b in graph_shas.items()},
+        head_sha[:7],
+        {s[:7]: b for s, b in graph_shas.items()},
     )
     for other_sha in get_sha_list():
         if other_sha == head_sha:
