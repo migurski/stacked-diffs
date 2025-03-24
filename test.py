@@ -1,11 +1,14 @@
 import contextlib
 import json
+import http.server
 import os
 import shlex
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+import uuid
 
 import networkx
 
@@ -19,7 +22,7 @@ PYTHON_STACK_PY = "{0} {1}".format(
 def run_cmd(cmd, quiet=True):
     pipe_kwargs = dict(stderr=subprocess.PIPE, stdout=subprocess.PIPE) if quiet else {}
     for line in cmd.strip().split("\n"):
-        subprocess.check_call(line.strip(), shell=True, **pipe_kwargs)
+        subprocess.check_call(line.strip(), shell=True, env={}, **pipe_kwargs)
 
 
 def get_output(cmd):
@@ -52,6 +55,47 @@ def fresh_repo():
         run_cmd("git init")
         add_hooks(tempdir)
         yield tempdir
+
+
+@contextlib.contextmanager
+def mock_github():
+    requests = []
+
+    class FakeGithub(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            requests.append(
+                (
+                    self.command,
+                    self.path,
+                    self.headers,
+                    self.rfile.read(int(self.headers.get("Content-Length"))),
+                )
+            )
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"Done")
+
+    old_token, os.environ["GITHUB_TOKEN"] = os.getenv("GITHUB_TOKEN"), str(uuid.uuid4())
+
+    for port in range(8000, 8099):
+        try:
+            server = http.server.HTTPServer(("", port), FakeGithub)
+        except OSError:
+            continue
+        else:
+            threading.Thread(target=server.serve_forever).start()
+            try:
+                yield port, os.environ["GITHUB_TOKEN"], requests
+            finally:
+                server.server_close()
+                server.shutdown()
+                break
+
+    if old_token is not None:
+        os.environ["GITHUB_TOKEN"] = old_token
+    else:
+        del os.environ["GITHUB_TOKEN"]
 
 
 class TestRepo(unittest.TestCase):
@@ -216,3 +260,21 @@ class TestRepo(unittest.TestCase):
         self.assertEqual(list(graph.successors("br/1")), ["br/2"])
         self.assertEqual(graph.nodes["br/1"]["base"], graph.nodes["main"]["sha"])
         self.assertEqual(graph.nodes["br/2"]["base"], graph.nodes["br/1"]["sha"])
+
+    def test_one_branch_submit(self):
+        """One branch submitted to Github"""
+        with fresh_repo():
+            with mock_github() as (port, token, requests):
+                run_cmd(f"""
+                    git commit -m one --allow-empty
+                    git checkout -b branch/1
+                    git commit -m two --allow-empty
+                    {PYTHON_STACK_PY} submit --github http://localhost:{port}
+                    """)
+                log, graph = get_git_log(), get_stack_graph()
+
+        print(requests, token)
+        self.assertEqual(len(log), 2)
+        self.assertEqual(log, ["two (HEAD -> branch/1)", "one (main)"])
+
+        self.assertEqual(len(requests), 1)

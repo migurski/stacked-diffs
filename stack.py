@@ -9,6 +9,7 @@ import os
 import subprocess
 
 import networkx
+import requests
 
 
 class Actions(enum.StrEnum):
@@ -16,6 +17,7 @@ class Actions(enum.StrEnum):
     post_checkout = "post-checkout"
     restack = "restack"
     move_onto = "move-onto"
+    submit = "submit"
 
 
 def run_command(cmd: tuple[str]):
@@ -125,37 +127,45 @@ def add_branch(
             break
 
 
-def main(action, args):
+def main(args1: argparse.Namespace, args2: list[str]):
     with read_graph() as graph:
         head_branch, head_sha = get_head_branch()
         if head_branch == "HEAD":
             return
         if head_branch in graph.nodes:
             update_branch(graph, head_branch, head_sha)
-        if action == Actions.restack:
+        if args1.action == Actions.restack:
             if head_branch not in graph.nodes:
                 raise ValueError(f"Unknown branch {head_branch}")
             else:
                 restack_branch(graph, head_branch, head_sha)
-        elif action == Actions.move_onto:
-            (new_parent,) = args
+        elif args1.action == Actions.move_onto:
+            (new_parent,) = args2
             if new_parent not in graph.nodes:
                 raise ValueError(f"Unknown branch {new_parent}")
             elif head_branch not in graph.nodes:
                 raise ValueError(f"Unknown branch {head_branch}")
             else:
                 move_branch(graph, head_branch, head_sha, new_parent)
-        elif action == Actions.post_checkout and head_branch not in graph.nodes:
-            parent_sha, is_branch = args
+        elif args1.action == Actions.submit:
+            requests.post(
+                f"{args1.github}/yo",
+                json={"Hello": "World"},
+                headers={"Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}"},
+            )
+            raise NotImplementedError()
+        elif args1.action == Actions.post_checkout and head_branch not in graph.nodes:
+            parent_sha, is_branch = args2
             if is_branch == "1":
                 add_branch(graph, parent_sha, head_branch, head_sha)
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument("action", choices=list(Actions))
+parser.add_argument("--github", default="https://api.github.com")
 
 
 if __name__ == "__main__":
     args1, args2 = parser.parse_known_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    exit(main(args1.action, args2))
+    exit(main(args1, args2))
