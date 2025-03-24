@@ -2,6 +2,7 @@
 import contextlib
 import functools
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -74,17 +75,39 @@ def update_branch(graph: networkx.DiGraph, curr_branch: str, curr_sha: str):
 def restack_branch(graph: networkx.DiGraph, curr_branch: str, curr_sha: str):
     if graph.nodes[curr_branch]["sha"] != curr_sha:
         raise ValueError("Current branch SHA incorrect")
-    for parent_branch in graph.predecessors(curr_branch):
-        new_base_sha = graph.nodes[parent_branch]["sha"]
-        run_command(("git", "rebase", new_base_sha))
-        graph.nodes[curr_branch]["base"] = new_base_sha
+    (parent_branch,) = graph.predecessors(curr_branch)
+    new_base_sha = graph.nodes[parent_branch]["sha"]
+    run_command(("git", "rebase", new_base_sha))
+    graph.nodes[curr_branch]["base"] = new_base_sha
+
+
+def move_branch(
+    graph: networkx.DiGraph, curr_branch: str, curr_sha: str, new_parent: str
+):
+    if graph.nodes[curr_branch]["sha"] != curr_sha:
+        raise ValueError("Current branch SHA incorrect")
+    (parent_branch,) = graph.predecessors(curr_branch)
+    if new_parent == parent_branch:
+        # No-op
+        return
+    logging.info("Move %s %s onto %s", curr_branch, curr_sha[:9], new_parent)
+    new_base_sha = graph.nodes[new_parent]["sha"]
+    run_command(("git", "rebase", new_base_sha))
+    graph.nodes[curr_branch]["base"] = new_base_sha
+    graph.remove_edge(parent_branch, curr_branch)
+    graph.add_edge(new_parent, curr_branch)
 
 
 def add_branch(
     graph: networkx.DiGraph, parent_sha: str, curr_branch: str, curr_sha: str
 ):
     graph_shas = {graph.nodes[node_id]["sha"]: node_id for node_id in graph.nodes}
-    print("Add", curr_branch, curr_sha, graph_shas)
+    logging.info(
+        "Add %s %s %s",
+        curr_branch,
+        curr_sha[:9],
+        {s[:9]: b for s, b in graph_shas.items()},
+    )
     for other_sha in get_sha_list():
         if other_sha == curr_sha:
             graph.add_node(curr_branch, sha=curr_sha, base=other_sha)
@@ -104,6 +127,12 @@ def main(action, args):
                 restack_branch(graph, curr_branch, curr_sha)
             else:
                 raise NotImplementedError()
+        elif action == "move-onto":
+            (new_parent,) = args
+            if new_parent in graph.nodes:
+                move_branch(graph, curr_branch, curr_sha, new_parent)
+            else:
+                raise NotImplementedError()
         elif action == "post-checkout" and curr_branch not in graph.nodes:
             parent_sha, is_branch = args
             if is_branch == "1":
@@ -112,4 +141,5 @@ def main(action, args):
 
 if __name__ == "__main__":
     action, *args = sys.argv[1:]
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     exit(main(action, args))
