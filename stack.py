@@ -71,7 +71,7 @@ def read_graph():
         node_id = line.split(" ")[-1].strip()
         node_sha = graph.nodes[node_id]["sha"]
         logging.info(
-            "%s %s %s", "==>" if node_sha == head_sha else "   ", line, node_sha[:7]
+            "%s %s %s", "==>" if node_id == head_branch else "   ", line, node_sha[:7]
         )
     with open(".stack.json", "w") as file:
         json.dump(networkx.node_link_data(graph, edges="edges"), file, indent=2)
@@ -103,8 +103,9 @@ def move_branch(
         # No-op
         return
     logging.info("Move %s %s onto %s", head_branch, head_sha[:7], new_parent)
+    old_base_sha = graph.nodes[head_branch]["base"]
     new_base_sha = graph.nodes[new_parent]["sha"]
-    run_command(("git", "rebase", new_base_sha))
+    run_command(("git", "rebase", "--onto", new_base_sha, old_base_sha, head_branch))
     graph.nodes[head_branch]["base"] = new_base_sha
     graph.remove_edge(parent_branch, head_branch)
     graph.add_edge(new_parent, head_branch)

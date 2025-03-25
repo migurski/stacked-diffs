@@ -239,7 +239,7 @@ class TestRepo(unittest.TestCase):
         self.assertEqual(graph.nodes["br/1"]["base"], graph.nodes["main"]["sha"])
         self.assertEqual(graph.nodes["br/2"]["base"], graph.nodes["br/1"]["sha"])
 
-    def test_two_branches_move_onto(self):
+    def test_two_branches_move_up_onto(self):
         """One branch moved onto another"""
         with fresh_repo():
             run_cmd(f"""
@@ -260,6 +260,27 @@ class TestRepo(unittest.TestCase):
         self.assertEqual(list(graph.successors("br/1")), ["br/2"])
         self.assertEqual(graph.nodes["br/1"]["base"], graph.nodes["main"]["sha"])
         self.assertEqual(graph.nodes["br/2"]["base"], graph.nodes["br/1"]["sha"])
+
+    def test_two_branches_move_down_onto(self):
+        """One branch moved onto another"""
+        with fresh_repo():
+            run_cmd(f"""
+                git commit -m one --allow-empty
+                git checkout -b br/1
+                git commit -m two --allow-empty
+                git checkout -b br/2
+                git commit -m three --allow-empty
+                {PYTHON_STACK_PY} move-onto main
+                """)
+            log, graph = get_git_log(), get_stack_graph()
+
+        self.assertEqual(len(log), 2)
+        self.assertEqual(log, ["three (HEAD -> br/2)", "one (main)"])
+
+        self.assertEqual(len(graph.nodes), 3)
+        self.assertEqual(list(graph.successors("main")), ["br/1", "br/2"])
+        self.assertEqual(graph.nodes["br/1"]["base"], graph.nodes["main"]["sha"])
+        self.assertEqual(graph.nodes["br/2"]["base"], graph.nodes["main"]["sha"])
 
     def test_one_branch_submit(self):
         """One branch submitted to Github"""
