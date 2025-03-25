@@ -128,6 +128,33 @@ def add_branch(
             break
 
 
+def submit_pull_request(graph: networkx.DiGraph, head_branch: str):
+    (parent_branch,) = graph.predecessors(head_branch)
+    if pull_url := graph.nodes[head_branch].get("pull_url"):
+        resp1 = requests.patch(
+            pull_url,
+            json={
+                "title": "Updated PR",
+                "head": head_branch,
+                "base": parent_branch,
+            },
+            headers={"Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}"},
+        )
+        print(resp1, resp1.content)
+    else:
+        resp2 = requests.post(
+            f"{args1.github}/repos/migurski/temp/pulls",
+            json={
+                "title": "New PR",
+                "head": head_branch,
+                "base": parent_branch,
+            },
+            headers={"Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}"},
+        )
+        print(resp2, resp2.content)
+        graph.nodes[head_branch]["pull_url"] = resp2.json()["url"]
+
+
 def main(args1: argparse.Namespace, args2: list[str]):
     with read_graph() as graph:
         head_branch, head_sha = get_head_branch()
@@ -149,12 +176,10 @@ def main(args1: argparse.Namespace, args2: list[str]):
             else:
                 move_branch(graph, head_branch, head_sha, new_parent)
         elif args1.action == Actions.submit:
-            requests.post(
-                f"{args1.github}/yo",
-                json={"Hello": "World"},
-                headers={"Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}"},
-            )
-            raise NotImplementedError()
+            if head_branch not in graph.nodes:
+                raise ValueError(f"Unknown branch {head_branch}")
+            else:
+                submit_pull_request(graph, head_branch)
         elif args1.action == Actions.post_checkout and head_branch not in graph.nodes:
             parent_sha, is_branch = args2
             if is_branch == "1":

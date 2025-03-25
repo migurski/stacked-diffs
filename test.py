@@ -74,7 +74,7 @@ def mock_github():
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
-            self.wfile.write(b"Done")
+            self.wfile.write(b'{"url":"http://example.com"}')
 
     old_token, os.environ["GITHUB_TOKEN"] = os.getenv("GITHUB_TOKEN"), str(uuid.uuid4())
 
