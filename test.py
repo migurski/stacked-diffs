@@ -23,7 +23,11 @@ PYTHON_STACK_PY = "{0} {1}".format(
 def run_cmd(cmd, quiet=True):
     pipe_kwargs = dict(stderr=subprocess.PIPE, stdout=subprocess.PIPE) if quiet else {}
     for line in cmd.strip().split("\n"):
-        subprocess.check_call(line.strip(), shell=True, env={}, **pipe_kwargs)
+        command = line.strip()
+        if command.startswith("git push origin "):
+            # Skip these, there is nowhere to push to
+            continue
+        subprocess.check_call(command, shell=True, env={}, **pipe_kwargs)
 
 
 def get_output(cmd):
@@ -54,6 +58,7 @@ def fresh_repo():
     with tempfile.TemporaryDirectory() as tempdir:
         os.chdir(tempdir)
         run_cmd("git init")
+        run_cmd("git remote add origin git@github.com:migurski/temp.git")
         add_hooks(tempdir)
         yield tempdir
 
@@ -66,9 +71,27 @@ def mock_github():
         state = {}
         counter = itertools.count(1)
 
-        def do_POST(self):
-            input = json.loads(self.rfile.read(int(self.headers.get("Content-Length"))))
+        def read_json_request(self):
+            return json.loads(self.rfile.read(int(self.headers.get("Content-Length"))))
 
+        def write_json_response(self, code, data):
+            self.send_response(code)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(data).encode("utf8"))
+
+        def do_PATCH(self):
+            input = self.read_json_request()
+            if state := self.state.get(self.path):
+                code, resp = 200, {"url": self.path}
+                self.state[self.path] = {**self.state[self.path], **input}
+            else:
+                code, resp = 422, {}
+            requests.append((self.command, self.path, input))
+            self.write_json_response(code, resp)
+
+        def do_POST(self):
+            input = self.read_json_request()
             if self.path == "/repos/migurski/temp/pulls":
                 url = f"/repos/migurski/temp/pull/{next(self.counter)}"
                 code, resp = 200, {"url": url}
@@ -76,10 +99,7 @@ def mock_github():
             else:
                 code, resp = 422, {}
             requests.append((self.command, self.path, input))
-            self.send_response(code)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps(resp).encode("utf8"))
+            self.write_json_response(code, resp)
 
     old_token, os.environ["GITHUB_TOKEN"] = os.getenv("GITHUB_TOKEN"), str(uuid.uuid4())
 
@@ -91,7 +111,7 @@ def mock_github():
         else:
             threading.Thread(target=server.serve_forever).start()
             try:
-                yield port, os.environ["GITHUB_TOKEN"], requests
+                yield f"http://localhost:{port}", os.environ["GITHUB_TOKEN"], requests
             finally:
                 server.server_close()
                 server.shutdown()
@@ -287,32 +307,128 @@ class TestRepo(unittest.TestCase):
         self.assertEqual(graph.nodes["br/1"]["base"], graph.nodes["main"]["sha"])
         self.assertEqual(graph.nodes["br/2"]["base"], graph.nodes["main"]["sha"])
 
-    def test_one_branch_submit(self):
+    def test_one_branch_submit_1x(self):
         """One branch submitted to Github"""
         with fresh_repo():
-            with mock_github() as (port, token, requests):
+            with mock_github() as (github_url, _, github_requests):
                 run_cmd(f"""
                     git commit -m one --allow-empty
                     git checkout -b br/1
                     git commit -m two --allow-empty
-                    {PYTHON_STACK_PY} submit --github http://localhost:{port}
+                    git push origin br/1
+                    {PYTHON_STACK_PY} submit --github {github_url}
                     """)
                 log, graph = get_git_log(), get_stack_graph()
 
         self.assertEqual(len(log), 2)
         self.assertEqual(log, ["two (HEAD -> br/1)", "one (main)"])
 
-        self.assertEqual(len(requests), 1)
-        self.assertEqual(
-            requests[0],
-            (
-                "POST",
-                "/repos/migurski/temp/pulls",
-                {"base": "main", "head": "br/1", "title": "New PR"},
-            ),
-        )
-
         self.assertEqual(len(graph.nodes), 2)
         self.assertEqual(list(graph.successors("main")), ["br/1"])
         self.assertEqual(graph.nodes["br/1"]["base"], graph.nodes["main"]["sha"])
-        self.assertEqual(graph.nodes["br/1"]["pull_url"], "/repos/migurski/temp/pull/1")
+        self.assertEqual(
+            graph.nodes["br/1"]["pull_url"], f"{github_url}/repos/migurski/temp/pull/1"
+        )
+
+        self.assertEqual(
+            github_requests,
+            [
+                (
+                    "POST",
+                    "/repos/migurski/temp/pulls",
+                    {"base": "main", "head": "br/1", "title": "New PR"},
+                ),
+            ],
+        )
+
+    def test_one_branch_submit_2x(self):
+        """One branch submitted to Github twice"""
+        with fresh_repo():
+            with mock_github() as (github_url, _, github_requests):
+                run_cmd(f"""
+                    git commit -m one --allow-empty
+                    git checkout -b br/1
+                    git commit -m two --allow-empty
+                    git checkout -b br/2
+                    git commit -m three --allow-empty
+                    git push origin br/2
+                    {PYTHON_STACK_PY} submit --github {github_url}
+                    {PYTHON_STACK_PY} move-onto main
+                    git push origin br/2
+                    {PYTHON_STACK_PY} submit --github {github_url}
+                    """)
+                log, graph = get_git_log(), get_stack_graph()
+
+        self.assertEqual(len(log), 2)
+        self.assertEqual(log, ["three (HEAD -> br/2)", "one (main)"])
+
+        self.assertEqual(len(graph.nodes), 3)
+        self.assertEqual(list(graph.successors("main")), ["br/1", "br/2"])
+        self.assertEqual(graph.nodes["br/1"]["base"], graph.nodes["main"]["sha"])
+        self.assertEqual(graph.nodes["br/2"]["base"], graph.nodes["main"]["sha"])
+        self.assertEqual(
+            graph.nodes["br/2"]["pull_url"], f"{github_url}/repos/migurski/temp/pull/1"
+        )
+
+        self.assertEqual(
+            github_requests,
+            [
+                (
+                    "POST",
+                    "/repos/migurski/temp/pulls",
+                    {"base": "br/1", "head": "br/2", "title": "New PR"},
+                ),
+                (
+                    "PATCH",
+                    "/repos/migurski/temp/pull/1",
+                    {"base": "main", "head": "br/2"},
+                ),
+            ],
+        )
+
+    def test_two_branches_submit_1x(self):
+        """Two branches submitted to Github once each"""
+        with fresh_repo():
+            with mock_github() as (github_url, _, github_requests):
+                run_cmd(f"""
+                    git commit -m one --allow-empty
+                    git checkout -b br/1
+                    git commit -m two --allow-empty
+                    git push origin br/1
+                    {PYTHON_STACK_PY} submit --github {github_url}
+                    git checkout -b br/2
+                    git commit -m three --allow-empty
+                    git push origin br/2
+                    {PYTHON_STACK_PY} submit --github {github_url}
+                    """)
+                log, graph = get_git_log(), get_stack_graph()
+
+        self.assertEqual(len(log), 3)
+        self.assertEqual(log, ["three (HEAD -> br/2)", "two (br/1)", "one (main)"])
+
+        self.assertEqual(len(graph.nodes), 3)
+        self.assertEqual(list(graph.successors("main")), ["br/1"])
+        self.assertEqual(graph.nodes["br/1"]["base"], graph.nodes["main"]["sha"])
+        self.assertEqual(
+            graph.nodes["br/1"]["pull_url"], f"{github_url}/repos/migurski/temp/pull/1"
+        )
+        self.assertEqual(graph.nodes["br/2"]["base"], graph.nodes["br/1"]["sha"])
+        self.assertEqual(
+            graph.nodes["br/2"]["pull_url"], f"{github_url}/repos/migurski/temp/pull/2"
+        )
+
+        self.assertEqual(
+            github_requests,
+            [
+                (
+                    "POST",
+                    "/repos/migurski/temp/pulls",
+                    {"base": "main", "head": "br/1", "title": "New PR"},
+                ),
+                (
+                    "POST",
+                    "/repos/migurski/temp/pulls",
+                    {"base": "br/1", "head": "br/2", "title": "New PR"},
+                ),
+            ],
+        )

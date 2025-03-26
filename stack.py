@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import subprocess
+import urllib.parse
 
 import networkx
 import requests
@@ -130,29 +131,19 @@ def add_branch(
 
 def submit_pull_request(graph: networkx.DiGraph, head_branch: str):
     (parent_branch,) = graph.predecessors(head_branch)
+    headers = {"Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}"}
     if pull_url := graph.nodes[head_branch].get("pull_url"):
-        resp1 = requests.patch(
-            pull_url,
-            json={
-                "title": "Updated PR",
-                "head": head_branch,
-                "base": parent_branch,
-            },
-            headers={"Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}"},
+        requests.patch(
+            pull_url, json={"head": head_branch, "base": parent_branch}, headers=headers
         )
-        print(resp1, resp1.content)
     else:
-        resp2 = requests.post(
+        resp = requests.post(
             f"{args1.github}/repos/migurski/temp/pulls",
-            json={
-                "title": "New PR",
-                "head": head_branch,
-                "base": parent_branch,
-            },
-            headers={"Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}"},
+            json={"title": "New PR", "head": head_branch, "base": parent_branch},
+            headers=headers,
         )
-        print(resp2, resp2.content)
-        graph.nodes[head_branch]["pull_url"] = resp2.json()["url"]
+        pull_url = urllib.parse.urljoin(args1.github, resp.json()["url"])
+        graph.nodes[head_branch]["pull_url"] = pull_url
 
 
 def main(args1: argparse.Namespace, args2: list[str]):
@@ -163,23 +154,16 @@ def main(args1: argparse.Namespace, args2: list[str]):
         if head_branch in graph.nodes:
             update_branch(graph, head_branch, head_sha)
         if args1.action == Actions.restack:
-            if head_branch not in graph.nodes:
-                raise ValueError(f"Unknown branch {head_branch}")
-            else:
-                restack_branch(graph, head_branch, head_sha)
+            assert head_branch in graph.nodes, f"Should know {head_branch}"
+            restack_branch(graph, head_branch, head_sha)
         elif args1.action == Actions.move_onto:
             (new_parent,) = args2
-            if new_parent not in graph.nodes:
-                raise ValueError(f"Unknown branch {new_parent}")
-            elif head_branch not in graph.nodes:
-                raise ValueError(f"Unknown branch {head_branch}")
-            else:
-                move_branch(graph, head_branch, head_sha, new_parent)
+            assert new_parent in graph.nodes, f"Should know {new_parent}"
+            assert head_branch in graph.nodes, f"Should know {head_branch}"
+            move_branch(graph, head_branch, head_sha, new_parent)
         elif args1.action == Actions.submit:
-            if head_branch not in graph.nodes:
-                raise ValueError(f"Unknown branch {head_branch}")
-            else:
-                submit_pull_request(graph, head_branch)
+            assert head_branch in graph.nodes, f"Should know {head_branch}"
+            submit_pull_request(graph, head_branch)
         elif args1.action == Actions.post_checkout and head_branch not in graph.nodes:
             parent_sha, is_branch = args2
             if is_branch == "1":
