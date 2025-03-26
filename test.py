@@ -1,6 +1,7 @@
 import contextlib
 import json
 import http.server
+import itertools
 import os
 import shlex
 import subprocess
@@ -62,19 +63,23 @@ def mock_github():
     requests = []
 
     class FakeGithub(http.server.BaseHTTPRequestHandler):
+        state = {}
+        counter = itertools.count(1)
+
         def do_POST(self):
-            requests.append(
-                (
-                    self.command,
-                    self.path,
-                    self.headers,
-                    self.rfile.read(int(self.headers.get("Content-Length"))),
-                )
-            )
-            self.send_response(200)
-            self.send_header("Content-type", "text/html")
+            input = json.loads(self.rfile.read(int(self.headers.get("Content-Length"))))
+
+            if self.path == "/repos/migurski/temp/pulls":
+                url = f"/repos/migurski/temp/pull/{next(self.counter)}"
+                code, resp = 200, {"url": url}
+                self.state[url] = input
+            else:
+                code, resp = 422, {}
+            requests.append((self.command, self.path, input))
+            self.send_response(code)
+            self.send_header("Content-type", "application/json")
             self.end_headers()
-            self.wfile.write(b'{"url":"http://example.com"}')
+            self.wfile.write(json.dumps(resp).encode("utf8"))
 
     old_token, os.environ["GITHUB_TOKEN"] = os.getenv("GITHUB_TOKEN"), str(uuid.uuid4())
 
@@ -288,14 +293,26 @@ class TestRepo(unittest.TestCase):
             with mock_github() as (port, token, requests):
                 run_cmd(f"""
                     git commit -m one --allow-empty
-                    git checkout -b branch/1
+                    git checkout -b br/1
                     git commit -m two --allow-empty
                     {PYTHON_STACK_PY} submit --github http://localhost:{port}
                     """)
                 log, graph = get_git_log(), get_stack_graph()
 
-        print(requests, token)
         self.assertEqual(len(log), 2)
-        self.assertEqual(log, ["two (HEAD -> branch/1)", "one (main)"])
+        self.assertEqual(log, ["two (HEAD -> br/1)", "one (main)"])
 
         self.assertEqual(len(requests), 1)
+        self.assertEqual(
+            requests[0],
+            (
+                "POST",
+                "/repos/migurski/temp/pulls",
+                {"base": "main", "head": "br/1", "title": "New PR"},
+            ),
+        )
+
+        self.assertEqual(len(graph.nodes), 2)
+        self.assertEqual(list(graph.successors("main")), ["br/1"])
+        self.assertEqual(graph.nodes["br/1"]["base"], graph.nodes["main"]["sha"])
+        self.assertEqual(graph.nodes["br/1"]["pull_url"], "/repos/migurski/temp/pull/1")
