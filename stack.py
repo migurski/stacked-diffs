@@ -27,7 +27,7 @@ class Actions(enum.StrEnum):
     submit = "submit"
 
 
-def run_command(cmd: tuple[str]):
+def run_command(*cmd: str):
     logging.info("--> %s", " ".join(cmd))
     subprocess.check_call(cmd)
 
@@ -96,7 +96,7 @@ def restack_branch(graph: networkx.DiGraph, head_branch: str, head_sha: str):
         raise ValueError("Current branch SHA incorrect")
     (parent_branch,) = graph.predecessors(head_branch)
     new_base_sha = graph.nodes[parent_branch]["sha"]
-    run_command(("git", "rebase", new_base_sha))
+    run_command("git", "rebase", new_base_sha)
     graph.nodes[head_branch]["base"] = new_base_sha
 
 
@@ -112,7 +112,10 @@ def move_branch(
     logging.info("Move %s %s onto %s", head_branch, head_sha[:7], new_parent)
     old_base_sha = graph.nodes[head_branch]["base"]
     new_base_sha = graph.nodes[new_parent]["sha"]
-    run_command(("git", "rebase", "--onto", new_base_sha, old_base_sha, head_branch))
+    try:
+        run_command("git", "rebase", "--onto", new_base_sha, old_base_sha, head_branch)
+    except subprocess.CalledProcessError as err:
+        logging.warning("****** Rebase error: %s ******", err)
     graph.nodes[head_branch]["base"] = new_base_sha
     graph.remove_edge(parent_branch, head_branch)
     graph.add_edge(new_parent, head_branch)
@@ -147,18 +150,24 @@ def submit_pull_request(graph: networkx.DiGraph, head_branch: str, title=None):
             repo = matched.group("repo")
         else:
             raise ValueError("Could not find github.com origin")
-        resp = requests.post(
-            f"{args1.github}/repos/{repo}/pulls",
-            json={
-                "title": title or "Draft Pull Request",
-                "head": head_branch,
-                "base": parent_branch,
-                "draft": True,
-            },
-            headers=headers,
-        )
-        pull_url = urllib.parse.urljoin(args1.github, resp.json()["url"])
-        graph.nodes[head_branch]["pull_url"] = pull_url
+        for draft in (True, False):
+            resp = requests.post(
+                f"{args1.github}/repos/{repo}/pulls",
+                json={
+                    "title": title or "Untitled Pull Request",
+                    "head": head_branch,
+                    "base": parent_branch,
+                    "draft": draft,
+                },
+                headers=headers,
+            )
+            if draft and resp.status_code == 422:
+                # Not all Github repos accept draft PRs
+                continue
+            else:
+                pull_url = urllib.parse.urljoin(args1.github, resp.json()["url"])
+                graph.nodes[head_branch]["pull_url"] = pull_url
+                break
 
 
 def main(args1: argparse.Namespace, args2: list[str]):

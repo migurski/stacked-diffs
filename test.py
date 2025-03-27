@@ -20,7 +20,7 @@ PYTHON_STACK_PY = "{0} {1}".format(
 )
 
 
-def run_cmd(cmd, quiet=True):
+def run_cmd(cmd: str, quiet=True):
     pipe_kwargs = dict(stderr=subprocess.PIPE, stdout=subprocess.PIPE) if quiet else {}
     for line in cmd.strip().split("\n"):
         command = line.strip()
@@ -30,12 +30,12 @@ def run_cmd(cmd, quiet=True):
         subprocess.check_call(command, shell=True, env={}, **pipe_kwargs)
 
 
-def get_output(cmd):
+def get_output(*cmd: str):
     return subprocess.check_output(cmd, stderr=subprocess.PIPE).decode("utf8")
 
 
 def get_git_log():
-    return get_output(("git", "log", "--pretty=%s (%D)")).strip().split("\n")
+    return get_output("git", "log", "--pretty=%s (%D)").strip().split("\n")
 
 
 def get_stack_graph():
