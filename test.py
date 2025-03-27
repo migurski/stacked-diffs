@@ -316,7 +316,7 @@ class TestRepo(unittest.TestCase):
                     git checkout -b br/1
                     git commit -m two --allow-empty
                     git push origin br/1
-                    {PYTHON_STACK_PY} submit --github {github_url}
+                    {PYTHON_STACK_PY} submit --github {github_url} "PR 1"
                     """)
                 log, graph = get_git_log(), get_stack_graph()
 
@@ -336,7 +336,7 @@ class TestRepo(unittest.TestCase):
                 (
                     "POST",
                     "/repos/migurski/temp/pulls",
-                    {"base": "main", "head": "br/1", "title": "New PR"},
+                    {"base": "main", "head": "br/1", "title": "PR 1", "draft": True},
                 ),
             ],
         )
@@ -352,7 +352,7 @@ class TestRepo(unittest.TestCase):
                     git checkout -b br/2
                     git commit -m three --allow-empty
                     git push origin br/2
-                    {PYTHON_STACK_PY} submit --github {github_url}
+                    {PYTHON_STACK_PY} submit --github {github_url} "PR 1"
                     {PYTHON_STACK_PY} move-onto main
                     git push origin br/2
                     {PYTHON_STACK_PY} submit --github {github_url}
@@ -376,7 +376,7 @@ class TestRepo(unittest.TestCase):
                 (
                     "POST",
                     "/repos/migurski/temp/pulls",
-                    {"base": "br/1", "head": "br/2", "title": "New PR"},
+                    {"base": "br/1", "head": "br/2", "title": "PR 1", "draft": True},
                 ),
                 (
                     "PATCH",
@@ -395,11 +395,11 @@ class TestRepo(unittest.TestCase):
                     git checkout -b br/1
                     git commit -m two --allow-empty
                     git push origin br/1
-                    {PYTHON_STACK_PY} submit --github {github_url}
+                    {PYTHON_STACK_PY} submit --github {github_url} "PR 1"
                     git checkout -b br/2
                     git commit -m three --allow-empty
                     git push origin br/2
-                    {PYTHON_STACK_PY} submit --github {github_url}
+                    {PYTHON_STACK_PY} submit --github {github_url} "PR 2"
                     """)
                 log, graph = get_git_log(), get_stack_graph()
 
@@ -423,12 +423,12 @@ class TestRepo(unittest.TestCase):
                 (
                     "POST",
                     "/repos/migurski/temp/pulls",
-                    {"base": "main", "head": "br/1", "title": "New PR"},
+                    {"base": "main", "head": "br/1", "title": "PR 1", "draft": True},
                 ),
                 (
                     "POST",
                     "/repos/migurski/temp/pulls",
-                    {"base": "br/1", "head": "br/2", "title": "New PR"},
+                    {"base": "br/1", "head": "br/2", "title": "PR 2", "draft": True},
                 ),
             ],
         )

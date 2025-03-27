@@ -135,7 +135,7 @@ def add_branch(
             break
 
 
-def submit_pull_request(graph: networkx.DiGraph, head_branch: str):
+def submit_pull_request(graph: networkx.DiGraph, head_branch: str, title=None):
     (parent_branch,) = graph.predecessors(head_branch)
     headers = {"Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}"}
     if pull_url := graph.nodes[head_branch].get("pull_url"):
@@ -149,7 +149,12 @@ def submit_pull_request(graph: networkx.DiGraph, head_branch: str):
             raise ValueError("Could not find github.com origin")
         resp = requests.post(
             f"{args1.github}/repos/{repo}/pulls",
-            json={"title": "New PR", "head": head_branch, "base": parent_branch},
+            json={
+                "title": title or "Draft Pull Request",
+                "head": head_branch,
+                "base": parent_branch,
+                "draft": True,
+            },
             headers=headers,
         )
         pull_url = urllib.parse.urljoin(args1.github, resp.json()["url"])
@@ -173,7 +178,7 @@ def main(args1: argparse.Namespace, args2: list[str]):
             move_branch(graph, head_branch, head_sha, new_parent)
         elif args1.action == Actions.submit:
             assert head_branch in graph.nodes, f"Should know {head_branch}"
-            submit_pull_request(graph, head_branch)
+            submit_pull_request(graph, head_branch, *args2)
         elif args1.action == Actions.post_checkout and head_branch not in graph.nodes:
             parent_sha, is_branch = args2
             if is_branch == "1":
