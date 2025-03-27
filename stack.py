@@ -6,11 +6,17 @@ import functools
 import json
 import logging
 import os
+import re
 import subprocess
 import urllib.parse
 
 import networkx
 import requests
+
+
+ORIGIN_PATTERN = re.compile(
+    r"^origin\tgit@github.com:(?P<repo>\w+/\w+).git \(push\)$", re.MULTILINE
+)
 
 
 class Actions(enum.StrEnum):
@@ -137,8 +143,12 @@ def submit_pull_request(graph: networkx.DiGraph, head_branch: str):
             pull_url, json={"head": head_branch, "base": parent_branch}, headers=headers
         )
     else:
+        if matched := ORIGIN_PATTERN.search(get_output(("git", "remote", "-v"))):
+            repo = matched.group("repo")
+        else:
+            raise ValueError("Could not find github.com origin")
         resp = requests.post(
-            f"{args1.github}/repos/migurski/temp/pulls",
+            f"{args1.github}/repos/{repo}/pulls",
             json={"title": "New PR", "head": head_branch, "base": parent_branch},
             headers=headers,
         )
