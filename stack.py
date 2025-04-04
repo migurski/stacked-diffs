@@ -27,9 +27,9 @@ class Actions(enum.StrEnum):
     submit = "submit"
 
 
-def run_command(*cmd: str):
+def run_command(*cmd: str, env: dict | None = None):
     logging.info("--> %s", " ".join(cmd))
-    subprocess.check_call(cmd)
+    subprocess.check_call(cmd, env=env)
 
 
 def get_output(cmd: tuple[str]) -> str:
@@ -48,7 +48,6 @@ def get_main_branch() -> tuple[str, str]:
     return branchname, sha
 
 
-@functools.cache
 def get_head_branch() -> tuple[str, str]:
     branchname = get_output(("git", "rev-parse", "--abbrev-ref", "HEAD")).strip()
     sha = get_output(("git", "rev-parse", "HEAD")).strip()
@@ -106,9 +105,6 @@ def move_branch(
     if graph.nodes[head_branch]["sha"] != head_sha:
         raise ValueError("Current branch SHA incorrect")
     (parent_branch,) = graph.predecessors(head_branch)
-    if new_parent == parent_branch:
-        # No-op
-        return
     logging.info("Move %s %s onto %s", head_branch, head_sha[:7], new_parent)
     old_base_sha = graph.nodes[head_branch]["base"]
     new_base_sha = graph.nodes[new_parent]["sha"]
@@ -116,9 +112,19 @@ def move_branch(
         run_command("git", "rebase", "--onto", new_base_sha, old_base_sha, head_branch)
     except subprocess.CalledProcessError as err:
         logging.warning("****** Rebase error: %s ******", err)
+    else:
+        _, new_head_sha = get_head_branch()
     graph.nodes[head_branch]["base"] = new_base_sha
+    graph.nodes[head_branch]["sha"] = new_head_sha
     graph.remove_edge(parent_branch, head_branch)
     graph.add_edge(new_parent, head_branch)
+
+    for child_head in list(graph.successors(head_branch)):
+        run_command("git", "checkout", child_head, env=dict(STACKY_STACKY="1"))
+        _, child_sha = get_head_branch()
+        move_branch(graph, child_head, child_sha, head_branch)
+
+    run_command("git", "checkout", head_branch, env=dict(STACKY_STACKY="1"))
 
 
 def add_branch(
@@ -171,6 +177,8 @@ def submit_pull_request(graph: networkx.DiGraph, head_branch: str, title=None):
 
 
 def main(args1: argparse.Namespace, args2: list[str]):
+    if "STACKY_STACKY" in os.environ:
+        return
     with read_graph() as graph:
         head_branch, head_sha = get_head_branch()
         if head_branch == "HEAD":

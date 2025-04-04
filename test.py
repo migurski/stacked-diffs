@@ -328,10 +328,10 @@ class TestRepo(unittest.TestCase):
         self.assertEqual(log, ["three (HEAD -> br/3)", "two (br/2)", "zero (main)"])
 
         self.assertEqual(len(graph.nodes), 4)
-        self.assertEqual(list(graph.successors("main")), ["br/0", "br/1"])
-        self.assertEqual(graph.nodes["br/0"]["base"], graph.nodes["main"]["sha"])
+        self.assertEqual(list(graph.successors("main")), ["br/1", "br/2"])
         self.assertEqual(graph.nodes["br/1"]["base"], graph.nodes["main"]["sha"])
-        self.assertEqual(graph.nodes["br/2"]["base"], graph.nodes["br/1"]["sha"])
+        self.assertEqual(graph.nodes["br/2"]["base"], graph.nodes["main"]["sha"])
+        self.assertEqual(graph.nodes["br/3"]["base"], graph.nodes["br/2"]["sha"])
 
     def test_one_branch_submit_1x(self):
         """One branch submitted to Github"""
