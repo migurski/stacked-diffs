@@ -130,6 +130,25 @@ class TestRepo(unittest.TestCase):
             graph = get_stack_graph()
         self.assertEqual(len(graph.nodes), 1)
 
+    def test_one_branch_subdir1(self):
+        """We're inside a subdirectory"""
+        with fresh_repo():
+            os.mkdir("subdir")
+            os.chdir("subdir")
+            run_cmd("git commit -m two --allow-empty")
+            graph = get_stack_graph()
+        self.assertEqual(len(graph.nodes), 1)
+
+    def test_one_branch_subdir2(self):
+        """We're inside a subdirectory"""
+        with fresh_repo():
+            os.mkdir("subdir")
+            os.chdir("subdir")
+            run_cmd("git commit -m two --allow-empty")
+            os.chdir("..")
+            graph = get_stack_graph()
+        self.assertEqual(len(graph.nodes), 1)
+
     def test_two_branches(self):
         """One branch simply extends main"""
         with fresh_repo():
@@ -139,6 +158,41 @@ class TestRepo(unittest.TestCase):
                 git commit -m two --allow-empty
                 git checkout main
                 """)
+            graph = get_stack_graph()
+        self.assertEqual(len(graph.nodes), 2)
+        self.assertEqual(list(graph.successors("main")), ["branch/1"])
+        self.assertEqual(graph.nodes["branch/1"]["base"], graph.nodes["main"]["sha"])
+
+    def test_two_branches_subdir1(self):
+        """One branch simply extends main and we're inside a subdirectory"""
+        with fresh_repo():
+            run_cmd("""
+                git commit -m one --allow-empty
+                git checkout -b branch/1
+                """)
+            os.mkdir("subdir")
+            os.chdir("subdir")
+            run_cmd("""
+                git commit -m two --allow-empty
+                git checkout main
+                """)
+            graph = get_stack_graph()
+        self.assertEqual(len(graph.nodes), 2)
+        self.assertEqual(list(graph.successors("main")), ["branch/1"])
+        self.assertEqual(graph.nodes["branch/1"]["base"], graph.nodes["main"]["sha"])
+
+    def test_two_branches_subdir2(self):
+        """One branch simply extends main and we're inside a subdirectory"""
+        with fresh_repo():
+            os.mkdir("subdir")
+            os.chdir("subdir")
+            run_cmd("""
+                git commit -m one --allow-empty
+                git checkout -b branch/1
+                git commit -m two --allow-empty
+                git checkout main
+                """)
+            os.chdir("..")
             graph = get_stack_graph()
         self.assertEqual(len(graph.nodes), 2)
         self.assertEqual(list(graph.successors("main")), ["branch/1"])
