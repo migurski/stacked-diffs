@@ -14,8 +14,12 @@ import networkx
 import requests
 
 
+PR_PATTERN = re.compile(
+    r"^https://api.github.com/repos/(?P<repo>[\w\-]+/[\w\-]+)/pulls/(?P<number>\d+)$"
+)
+
 ORIGIN_PATTERN = re.compile(
-    r"^origin\tgit@github.com:(?P<repo>\w+/\w+).git \(push\)$", re.MULTILINE
+    r"^origin\tgit@github.com:(?P<repo>[\w\-]+/[\w\-]+).git \(push\)$", re.MULTILINE
 )
 
 
@@ -75,10 +79,17 @@ def read_graph():
 
     for line in networkx.generate_network_text(graph):
         node_id = line.split(" ")[-1].strip()
-        node_sha = graph.nodes[node_id]["sha"]
-        logging.info(
-            "%s %s %s", "==>" if node_id == head_branch else "   ", line, node_sha[:7]
-        )
+        graph_node = graph.nodes[node_id]
+        node_sha = graph_node["sha"]
+        prefix = "━━▶︎" if node_id == head_branch else "   "
+        if "pull_url" in graph_node:
+            pull_url = PR_PATTERN.sub(
+                r"https://github.com/\g<repo>/pull/\g<number>",
+                graph_node["pull_url"],
+            )
+            logging.info("%s %s ┈ %s ● %s", prefix, line, node_sha[:7], pull_url)
+        else:
+            logging.info("%s %s ┈ %s", prefix, line, node_sha[:7])
     with open(".stack.json", "w") as file:
         json.dump(networkx.node_link_data(graph, edges="edges"), file, indent=2)
 
