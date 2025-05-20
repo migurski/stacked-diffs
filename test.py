@@ -136,6 +136,7 @@ class TestRepo(unittest.TestCase):
             os.mkdir("subdir")
             os.chdir("subdir")
             run_cmd("git commit -m two --allow-empty")
+            os.chdir("..")
             graph = get_stack_graph()
         self.assertEqual(len(graph.nodes), 1)
 
@@ -176,6 +177,7 @@ class TestRepo(unittest.TestCase):
                 git commit -m two --allow-empty
                 git checkout main
                 """)
+            os.chdir("..")
             graph = get_stack_graph()
         self.assertEqual(len(graph.nodes), 2)
         self.assertEqual(list(graph.successors("main")), ["branch/1"])
