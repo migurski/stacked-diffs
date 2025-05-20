@@ -29,6 +29,7 @@ class Actions(enum.StrEnum):
     restack = "restack"
     move_onto = "move-onto"
     submit = "submit"
+    forget = "forget"
 
 
 def run_command(*cmd: str, env: dict | None = None):
@@ -189,6 +190,14 @@ def submit_pull_request(graph: networkx.DiGraph, head_branch: str, title=None):
                 break
 
 
+def forget_branch(graph: networkx.DiGraph, head_branch: str, old_branch: str):
+    if old_branch == head_branch:
+        raise ValueError(f"Can't forget {old_branch} while on {head_branch}")
+    for child_head in list(graph.successors(old_branch)):
+        raise ValueError(f"Can't forget {old_branch} while {child_head} exists")
+    graph.remove_node(old_branch)
+
+
 def main(args1: argparse.Namespace, args2: list[str]):
     if "STACKY_STACKY" in os.environ:
         return
@@ -209,6 +218,11 @@ def main(args1: argparse.Namespace, args2: list[str]):
         elif args1.action == Actions.submit:
             assert head_branch in graph.nodes, f"Should know {head_branch}"
             submit_pull_request(graph, head_branch, *args2)
+        elif args1.action == Actions.forget:
+            (old_branch,) = args2
+            assert old_branch in graph.nodes, f"Should know {old_branch}"
+            assert head_branch in graph.nodes, f"Should know {head_branch}"
+            forget_branch(graph, head_branch, old_branch)
         elif args1.action == Actions.post_checkout and head_branch not in graph.nodes:
             parent_sha, is_branch = args2
             if is_branch == "1":

@@ -514,3 +514,19 @@ class TestRepo(unittest.TestCase):
                 ),
             ],
         )
+
+    def test_one_branch_forget_by_name(self):
+        """One branch forgotten safely by name"""
+        with fresh_repo():
+            run_cmd(f"""
+                git commit -m one --allow-empty
+                git checkout -b br/1
+                git commit -m two --allow-empty
+                git checkout main
+                {PYTHON_STACK_PY} forget br/1
+                """)
+            log, graph = get_git_log(), get_stack_graph()
+
+        self.assertEqual(len(log), 1)
+        self.assertEqual(log, ["one (HEAD -> main)"])
+        self.assertEqual(len(graph.nodes), 1)
