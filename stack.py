@@ -159,26 +159,28 @@ def submit_pull_request(graph: networkx.DiGraph, head_branch: str, title=None):
     (parent_branch,) = graph.predecessors(head_branch)
     headers = {"Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}"}
     if pull_url := graph.nodes[head_branch].get("pull_url"):
-        requests.patch(
+        resp = requests.patch(
             pull_url, json={"head": head_branch, "base": parent_branch}, headers=headers
         )
+        if resp.status_code not in range(200, 299):
+            raise ValueError(resp.text)
     else:
         if matched := ORIGIN_PATTERN.search(get_output(("git", "remote", "-v"))):
             repo = matched.group("repo")
         else:
             raise ValueError("Could not find github.com origin")
-        for draft in (True, False):
+        for wanted_draft_mode in (True, False):
             resp = requests.post(
                 f"{args1.github}/repos/{repo}/pulls",
                 json={
                     "title": title or "Untitled Pull Request",
                     "head": head_branch,
                     "base": parent_branch,
-                    "draft": draft,
+                    "draft": wanted_draft_mode,
                 },
                 headers=headers,
             )
-            if draft and resp.status_code == 422:
+            if wanted_draft_mode and resp.status_code == 422:
                 # Not all Github repos accept draft PRs
                 continue
             else:
